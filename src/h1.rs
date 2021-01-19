@@ -87,8 +87,28 @@ async fn add_tls(
     host: String,
     stream: async_std::net::TcpStream,
 ) -> std::io::Result<async_tls::client::TlsStream<async_std::net::TcpStream>> {
-    let connector = async_tls::TlsConnector::default();
+    use std::sync::Arc;
+
+    let mut cfg = rustls::ClientConfig::new();
+    cfg.dangerous().set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+    let connector = async_tls::TlsConnector::from(cfg);
     connector.connect(host, stream).await
+}
+
+#[cfg(feature = "h1_client_rustls")]
+pub struct NoCertificateVerification {}
+
+#[cfg(feature = "h1_client_rustls")]
+impl rustls::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _roots: &rustls::RootCertStore,
+        _presented_certs: &[rustls::Certificate],
+        _dns_name: webpki::DNSNameRef<'_>,
+        _ocsp: &[u8],
+    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
+    }
 }
 
 #[cfg(test)]
