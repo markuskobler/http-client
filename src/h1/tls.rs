@@ -9,7 +9,7 @@ use futures::io::{AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "rustls")] {
+    if #[cfg(feature = "rustls_client")] {
         use async_tls::client::TlsStream;
     } else if #[cfg(feature = "native-tls")] {
         use async_native_tls::TlsStream;
@@ -91,9 +91,13 @@ impl Manager<TlsStream<TcpStream>, Error> for TlsConnection {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "rustls")] {
+    if #[cfg(feature = "rustls_client")] {
         async fn add_tls(host: &str, stream: TcpStream) -> Result<TlsStream<TcpStream>, std::io::Error> {
-            let connector = async_tls::TlsConnector::default();
+            use std::sync::Arc;
+
+            let mut cfg = rustls::ClientConfig::new();
+            cfg.dangerous().set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+            let connector = async_tls::TlsConnector::from(cfg);
             connector.connect(host, stream).await
         }
     } else if #[cfg(feature = "native-tls")] {
@@ -103,5 +107,21 @@ cfg_if::cfg_if! {
         ) -> Result<TlsStream<TcpStream>, async_native_tls::Error> {
             async_native_tls::connect(host, stream).await
         }
+    }
+}
+
+#[cfg(feature = "rustls_client")]
+pub struct NoCertificateVerification {}
+
+#[cfg(feature = "rustls_client")]
+impl rustls::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _roots: &rustls::RootCertStore,
+        _presented_certs: &[rustls::Certificate],
+        _dns_name: webpki::DNSNameRef<'_>,
+        _ocsp: &[u8],
+    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
     }
 }
